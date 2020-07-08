@@ -1,0 +1,9 @@
+<script type="text/javascript" src="../setIntervalAnimationFrame.js"></script>
+
+<script>
+  var lastTs = new Date().getTime()
+  setIntervalAnimationFrame(() => {
+    console.log(new Date(), new Date().getTime() - lastTs)
+    lastTs = new Date().getTime()
+  }, 500)
+</script>
