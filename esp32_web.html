@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-CAM Stream</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body {
+            height: 100vh; /* Full viewport height */
+            display: flex;
+            flex-direction: column;
+        }
+        #cameraFeed {
+            margin-top: 10px;
+            width: 100%;  /* Set width to 100% */
+            height: auto; /* Keep aspect ratio */
+            flex-grow: 1; /* Allow the image to grow and fill available space */
+        }
+        .input-group {
+            margin: 5px 0; /* Compact margin */
+        }
+    </style>
+</head>
+<body class="container text-center">
+    <div class="row justify-content-center">
+        <div class="col-8">
+            <div class="form-group row align-items-center">
+                <div class="col">
+                    <input type="text" class="form-control" id="serverUrl" placeholder="Enter server URL" value="http://192.168.1.113">
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-primary" id="connectButton" onclick="configureAndConnect()">Connect</button>
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-secondary" onclick="togglePanel()">Toggle Control Panel</button>
+                </div>
+            </div>
+            <p id="message" class="mt-2"></p> <!-- Compact status message -->
+        </div>
+    </div>
+    <div class="collapse" id="controlPanel">
+        <div class="row justify-content-center">
+            <div class="col-8">
+                <div class="input-group">
+                    <label for="framesize" class="input-group-text">Resolution</label>
+                    <select id="framesize" class="form-select" onchange="updateSettings()">
+                        <option value="8" selected>VGA(640x480)</option>
+                        <option value="13">UXGA(1600x1200)</option>
+                        <option value="12">SXGA(1280x1024)</option>
+                        <option value="11">HD(1280x720)</option>
+                        <option value="10">XGA(1024x768)</option>
+                        <option value="9">SVGA(800x600)</option>
+                        <option value="7">HVGA(480x320)</option>
+                        <option value="6">CIF(400x296)</option>
+                        <option value="5">QVGA(320x240)</option>
+                        <option value="4">240x240</option>
+                        <option value="3">HQVGA(240x176)</option>
+                        <option value="2">QCIF(176x144)</option>
+                        <option value="1">QQVGA(160x120)</option>
+                        <option value="0">96x96</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="quality" class="input-group-text">Quality (4-63): <span id="qualityValue">32</span></label>
+                    <input type="range" id="quality" min="4" max="63" value="32" class="form-range" onchange="updateQuality()">
+                </div>
+                <div class="input-group">
+                    <label for="vflip" class="input-group-text">Vertical Flip</label>
+                    <input type="checkbox" id="vflip" class="form-check-input" onchange="updateSettings()">
+                </div>
+                <div class="input-group">
+                    <label for="xclk" class="input-group-text">XCLK (1-40): <span id="xclkValue">40</span></label>
+                    <input type="range" id="xclk" min="1" max="40" value="40" class="form-range" onchange="updateXCLK()">
+                </div>
+            </div>
+        </div>
+    </div>
+    <img id="cameraFeed" src="" alt="Camera Feed" style="display: none;">
+
+    <script>
+        function togglePanel() {
+            const panel = document.getElementById('controlPanel');
+            panel.classList.toggle('collapse'); // Toggle the visibility of the control panel
+        }
+
+        function updateQuality() {
+            const quality = document.getElementById('quality').value;
+            document.getElementById('qualityValue').innerText = quality; // Update displayed quality value
+            updateSettings(); // Send updated quality to the ESP32-CAM
+        }
+
+        function updateXCLK() {
+            const baseUrl = document.getElementById('serverUrl').value;
+            const xclk = document.getElementById('xclk').value;
+            document.getElementById('xclkValue').innerText = xclk; // Update displayed xclk value
+
+            // Send xclk setting to the ESP32-CAM
+            fetch(`${baseUrl}/xclk?xclk=${xclk}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.text();
+                })
+                .then(result => {
+                    console.log('XCLK setting applied:', result);
+                })
+                .catch(error => {
+                    document.getElementById('message').innerText = `Error: ${error.message}`;
+                });
+        }
+
+        function updateSettings() {
+            // Enable the Connect button when settings change
+            document.getElementById('connectButton').disabled = false;
+            const baseUrl = document.getElementById('serverUrl').value;
+            const framesize = document.getElementById('framesize').value;
+            const quality = document.getElementById('quality').value;
+            const vflip = document.getElementById('vflip').checked ? 1 : 0;
+
+            // Set configuration settings
+            const settings = [
+                { var: 'quality', val: quality },
+                { var: 'vflip', val: vflip },
+                { var: 'framesize', val: framesize }
+            ];
+
+            // Send settings to the ESP32-CAM on port 80
+            Promise.all(settings.map(setting => {
+                return fetch(`${baseUrl}/control?var=${setting.var}&val=${setting.val}`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.text();
+                    });
+            }))
+            .then(results => {
+                console.log('Settings applied:', results);
+            })
+            .catch(error => {
+                document.getElementById('message').innerText = `Error: ${error.message}`;
+            });
+        }
+
+        function configureAndConnect() {
+            const baseUrl = document.getElementById('serverUrl').value;
+            const cameraFeed = document.getElementById('cameraFeed');
+            cameraFeed.src = `${baseUrl.replace('http://', 'http://')}:81/stream`;  // Update the source to the stream URL on port 81
+            cameraFeed.style.display = 'block';  // Show the image element
+            document.getElementById('message').innerText = `Connected to: ${baseUrl}`;
+        }
+    </script>
+</body>
+</html>
